@@ -967,8 +967,8 @@ describe('DOMPluginEventSystem', () => {
               <div ref={middleDivRef}>
                 <div
                   ref={divRef}
-                  onClick={onFocus}
-                  onClickCapture={onFocusCapture}
+                  onFocus={onFocus}
+                  onFocusCapture={onFocusCapture}
                   tabIndex={0}>
                   Click me!
                 </div>
@@ -980,7 +980,7 @@ describe('DOMPluginEventSystem', () => {
             React.useLayoutEffect(() => {
               // This should prevent the portalElement listeners from
               // capturing the events in the bubble phase.
-              middleDivRef.current.addEventListener('click', e => {
+              middleDivRef.current.addEventListener('focusin', e => {
                 e.stopPropagation();
               });
             });
@@ -1007,7 +1007,7 @@ describe('DOMPluginEventSystem', () => {
           const divElement = divRef.current;
           divElement.focus();
           expect(onFocus).toHaveBeenCalledTimes(1);
-          expect(onFocusCapture).toHaveBeenCalledTimes(1);
+          expect(onFocusCapture).toHaveBeenCalledTimes(3);
 
           document.body.removeChild(portalElement);
         });
@@ -1667,16 +1667,28 @@ describe('DOMPluginEventSystem', () => {
 
             function Test() {
               React.useEffect(() => {
-                setClick1(buttonRef.current, targetListener1);
-                setClick2(buttonRef.current, targetListener2);
-                setClick3(buttonRef.current, targetListener3);
-                setClick4(buttonRef.current, targetListener4);
+                const clearClick1 = setClick1(
+                  buttonRef.current,
+                  targetListener1,
+                );
+                const clearClick2 = setClick2(
+                  buttonRef.current,
+                  targetListener2,
+                );
+                const clearClick3 = setClick3(
+                  buttonRef.current,
+                  targetListener3,
+                );
+                const clearClick4 = setClick4(
+                  buttonRef.current,
+                  targetListener4,
+                );
 
                 return () => {
-                  setClick1();
-                  setClick2();
-                  setClick3();
-                  setClick4();
+                  clearClick1();
+                  clearClick2();
+                  clearClick3();
+                  clearClick4();
                 };
               });
 
@@ -1701,16 +1713,28 @@ describe('DOMPluginEventSystem', () => {
 
             function Test2() {
               React.useEffect(() => {
-                setClick1(buttonRef.current, targetListener1);
-                setClick2(buttonRef.current, targetListener2);
-                setClick3(buttonRef.current, targetListener3);
-                setClick4(buttonRef.current, targetListener4);
+                const clearClick1 = setClick1(
+                  buttonRef.current,
+                  targetListener1,
+                );
+                const clearClick2 = setClick2(
+                  buttonRef.current,
+                  targetListener2,
+                );
+                const clearClick3 = setClick3(
+                  buttonRef.current,
+                  targetListener3,
+                );
+                const clearClick4 = setClick4(
+                  buttonRef.current,
+                  targetListener4,
+                );
 
                 return () => {
-                  setClick1();
-                  setClick2();
-                  setClick3();
-                  setClick4();
+                  clearClick1();
+                  clearClick2();
+                  clearClick3();
+                  clearClick4();
                 };
               });
 
@@ -2377,85 +2401,97 @@ describe('DOMPluginEventSystem', () => {
             );
 
             let setCustomEventHandle;
+            if (gate(flags => flags.enableEagerRootListeners)) {
+              // With eager listeners, supporting custom events via this API doesn't make sense
+              // because we can't know a full list of them ahead of time. Let's check we throw
+              // since otherwise we'd end up with inconsistent behavior, like no portal bubbling.
+              expect(() => {
+                setCustomEventHandle = ReactDOM.unstable_createEventHandle(
+                  'custom-event',
+                );
+              }).toThrow(
+                'Cannot call unstable_createEventHandle with "custom-event", as it is not an event known to React.',
+              );
+            } else {
+              // Test that we get a warning when we don't provide an explicit priority
+              expect(() => {
+                setCustomEventHandle = ReactDOM.unstable_createEventHandle(
+                  'custom-event',
+                );
+              }).toWarnDev(
+                'Warning: The event "custom-event" provided to createEventHandle() does not have a known priority type. ' +
+                  'It is recommended to provide a "priority" option to specify a priority.',
+                {withoutStack: true},
+              );
 
-            // Test that we get a warning when we don't provide an explicit priority
-            expect(() => {
               setCustomEventHandle = ReactDOM.unstable_createEventHandle(
                 'custom-event',
+                {
+                  priority: 0, // Discrete
+                },
               );
-            }).toWarnDev(
-              'Warning: The event "type" provided to createEventHandle() does not have a known priority type. ' +
-                'It is recommended to provide a "priority" option to specify a priority.',
-              {withoutStack: true},
-            );
 
-            setCustomEventHandle = ReactDOM.unstable_createEventHandle(
-              'custom-event',
-              {
-                priority: 0, // Discrete
-              },
-            );
-
-            const setCustomCaptureHandle = ReactDOM.unstable_createEventHandle(
-              'custom-event',
-              {
-                capture: true,
-                priority: 0, // Discrete
-              },
-            );
-
-            function Test() {
-              React.useEffect(() => {
-                const clearCustom1 = setCustomEventHandle(
-                  buttonRef.current,
-                  onCustomEvent,
-                );
-                const clearCustom2 = setCustomCaptureHandle(
-                  buttonRef.current,
-                  onCustomEventCapture,
-                );
-                const clearCustom3 = setCustomEventHandle(
-                  divRef.current,
-                  onCustomEvent,
-                );
-                const clearCustom4 = setCustomCaptureHandle(
-                  divRef.current,
-                  onCustomEventCapture,
-                );
-
-                return () => {
-                  clearCustom1();
-                  clearCustom2();
-                  clearCustom3();
-                  clearCustom4();
-                };
-              });
-
-              return (
-                <button ref={buttonRef}>
-                  <div ref={divRef}>Click me!</div>
-                </button>
+              const setCustomCaptureHandle = ReactDOM.unstable_createEventHandle(
+                'custom-event',
+                {
+                  capture: true,
+                  priority: 0, // Discrete
+                },
               );
+
+              const Test = () => {
+                React.useEffect(() => {
+                  const clearCustom1 = setCustomEventHandle(
+                    buttonRef.current,
+                    onCustomEvent,
+                  );
+                  const clearCustom2 = setCustomCaptureHandle(
+                    buttonRef.current,
+                    onCustomEventCapture,
+                  );
+                  const clearCustom3 = setCustomEventHandle(
+                    divRef.current,
+                    onCustomEvent,
+                  );
+                  const clearCustom4 = setCustomCaptureHandle(
+                    divRef.current,
+                    onCustomEventCapture,
+                  );
+
+                  return () => {
+                    clearCustom1();
+                    clearCustom2();
+                    clearCustom3();
+                    clearCustom4();
+                  };
+                });
+
+                return (
+                  <button ref={buttonRef}>
+                    <div ref={divRef}>Click me!</div>
+                  </button>
+                );
+              };
+
+              ReactDOM.render(<Test />, container);
+              Scheduler.unstable_flushAll();
+
+              const buttonElement = buttonRef.current;
+              dispatchEvent(buttonElement, 'custom-event');
+              expect(onCustomEvent).toHaveBeenCalledTimes(1);
+              expect(onCustomEventCapture).toHaveBeenCalledTimes(1);
+              expect(log[0]).toEqual(['capture', buttonElement]);
+              expect(log[1]).toEqual(['bubble', buttonElement]);
+
+              const divElement = divRef.current;
+              dispatchEvent(divElement, 'custom-event');
+              expect(onCustomEvent).toHaveBeenCalledTimes(3);
+              expect(onCustomEventCapture).toHaveBeenCalledTimes(3);
+              expect(log[2]).toEqual(['capture', buttonElement]);
+              expect(log[3]).toEqual(['capture', divElement]);
+              expect(log[4]).toEqual(['bubble', divElement]);
+              expect(log[5]).toEqual(['bubble', buttonElement]);
             }
-
-            ReactDOM.render(<Test />, container);
-            Scheduler.unstable_flushAll();
-
-            const buttonElement = buttonRef.current;
-            dispatchEvent(buttonElement, 'custom-event');
-            expect(onCustomEvent).toHaveBeenCalledTimes(1);
-            expect(onCustomEventCapture).toHaveBeenCalledTimes(1);
-            expect(log[0]).toEqual(['capture', buttonElement]);
-            expect(log[1]).toEqual(['bubble', buttonElement]);
-
-            const divElement = divRef.current;
-            dispatchEvent(divElement, 'custom-event');
-            expect(onCustomEvent).toHaveBeenCalledTimes(3);
-            expect(onCustomEventCapture).toHaveBeenCalledTimes(3);
-            expect(log[2]).toEqual(['capture', buttonElement]);
-            expect(log[3]).toEqual(['capture', divElement]);
-            expect(log[4]).toEqual(['bubble', divElement]);
-            expect(log[5]).toEqual(['bubble', buttonElement]);
           });
 
           // @gate experimental
@@ -2799,6 +2835,64 @@ describe('DOMPluginEventSystem', () => {
             expect(log[5]).toEqual(['bubble', buttonElement]);
           });
 
+          // @gate experimental && enableEagerRootListeners
+          it('propagates known createEventHandle events through portals without inner listeners', () => {
+            const buttonRef = React.createRef();
+            const divRef = React.createRef();
+            const log = [];
+            const onClick = jest.fn(e => log.push(['bubble', e.currentTarget]));
+            const onClickCapture = jest.fn(e =>
+              log.push(['capture', e.currentTarget]),
+            );
+            const setClick = ReactDOM.unstable_createEventHandle('click');
+            const setClickCapture = ReactDOM.unstable_createEventHandle(
+              'click',
+              {
+                capture: true,
+              },
+            );
+
+            const portalElement = document.createElement('div');
+            document.body.appendChild(portalElement);
+
+            function Child() {
+              return <div ref={divRef}>Click me!</div>;
+            }
+
+            function Parent() {
+              React.useEffect(() => {
+                const clear1 = setClick(buttonRef.current, onClick);
+                const clear2 = setClickCapture(
+                  buttonRef.current,
+                  onClickCapture,
+                );
+                return () => {
+                  clear1();
+                  clear2();
+                };
+              });
+
+              return (
+                <button ref={buttonRef}>
+                  {ReactDOM.createPortal(<Child />, portalElement)}
+                </button>
+              );
+            }
+
+            ReactDOM.render(<Parent />, container);
+            Scheduler.unstable_flushAll();
+
+            const divElement = divRef.current;
+            const buttonElement = buttonRef.current;
+            dispatchClickEvent(divElement);
+            expect(onClick).toHaveBeenCalledTimes(1);
+            expect(onClickCapture).toHaveBeenCalledTimes(1);
+            expect(log[0]).toEqual(['capture', buttonElement]);
+            expect(log[1]).toEqual(['bubble', buttonElement]);
+
+            document.body.removeChild(portalElement);
+          });
+
           describe('Compatibility with Scopes API', () => {
             beforeEach(() => {
               jest.resetModules();
@@ -3112,6 +3206,67 @@ describe('DOMPluginEventSystem', () => {
               dispatchClickEvent(buttonElement);
 
               expect(onClick).toHaveBeenCalledTimes(1);
+            });
+
+            // @gate experimental
+            it('should be able to register non-passive handlers for events affected by the intervention', () => {
+              const rootContainer = document.createElement('div');
+              container.appendChild(rootContainer);
+
+              const defaultPreventedEvents = [];
+              const handler = e => {
+                if (e.defaultPrevented) defaultPreventedEvents.push(e.type);
+              };
+
+              container.addEventListener('touchstart', handler);
+              container.addEventListener('touchmove', handler);
+              container.addEventListener('wheel', handler);
+
+              const ref = React.createRef();
+              const setTouchStart = ReactDOM.unstable_createEventHandle(
+                'touchstart',
+                {passive: false},
+              );
+              const setTouchMove = ReactDOM.unstable_createEventHandle(
+                'touchmove',
+                {passive: false},
+              );
+              const setWheel = ReactDOM.unstable_createEventHandle('wheel', {
+                passive: false,
+              });
+
+              function Component() {
+                React.useEffect(() => {
+                  const clearTouchStart = setTouchStart(ref.current, e =>
+                    e.preventDefault(),
+                  );
+                  const clearTouchMove = setTouchMove(ref.current, e =>
+                    e.preventDefault(),
+                  );
+                  const clearWheel = setWheel(ref.current, e =>
+                    e.preventDefault(),
+                  );
+                  return () => {
+                    clearTouchStart();
+                    clearTouchMove();
+                    clearWheel();
+                  };
+                });
+                return <div ref={ref}>test</div>;
+              }
+
+              ReactDOM.render(<Component />, rootContainer);
+              Scheduler.unstable_flushAll();
+
+              dispatchEvent(ref.current, 'touchstart');
+              dispatchEvent(ref.current, 'touchmove');
+              dispatchEvent(ref.current, 'wheel');
+
+              expect(defaultPreventedEvents).toEqual([
+                'touchstart',
+                'touchmove',
+                'wheel',
+              ]);
             });
           });
         });

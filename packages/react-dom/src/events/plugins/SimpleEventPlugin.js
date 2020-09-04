@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {TopLevelType} from '../../events/TopLevelEventTypes';
+import type {DOMEventName} from '../../events/DOMEventNames';
 import type {Fiber} from 'react-reconciler/src/ReactInternalTypes';
 import type {AnyNativeEvent} from '../../events/PluginModuleType';
 import type {DispatchQueue} from '../DOMPluginEventSystem';
@@ -28,7 +28,12 @@ import {
   WheelEventInterface,
 } from '../../events/SyntheticEvent';
 
-import * as DOMTopLevelEventTypes from '../DOMTopLevelEventTypes';
+import {
+  ANIMATION_END,
+  ANIMATION_ITERATION,
+  ANIMATION_START,
+  TRANSITION_END,
+} from '../DOMEventNames';
 import {
   topLevelEventsToReactNames,
   registerSimpleEvents,
@@ -42,27 +47,25 @@ import {IS_EVENT_HANDLE_NON_MANAGED_NODE} from '../EventSystemFlags';
 import getEventCharCode from '../getEventCharCode';
 import {IS_CAPTURE_PHASE} from '../EventSystemFlags';
 
-import {
-  enableCreateEventHandleAPI,
-  disableOnScrollBubbling,
-} from 'shared/ReactFeatureFlags';
+import {enableCreateEventHandleAPI} from 'shared/ReactFeatureFlags';
 
 function extractEvents(
   dispatchQueue: DispatchQueue,
-  topLevelType: TopLevelType,
+  domEventName: DOMEventName,
   targetInst: null | Fiber,
   nativeEvent: AnyNativeEvent,
   nativeEventTarget: null | EventTarget,
   eventSystemFlags: EventSystemFlags,
   targetContainer: EventTarget,
 ): void {
-  const reactName = topLevelEventsToReactNames.get(topLevelType);
+  const reactName = topLevelEventsToReactNames.get(domEventName);
   if (reactName === undefined) {
     return;
   }
   let EventInterface;
-  switch (topLevelType) {
-    case DOMTopLevelEventTypes.TOP_KEY_PRESS:
+  let reactEventType = domEventName;
+  switch (domEventName) {
+    case 'keypress':
       // Firefox creates a keypress event for function keys too. This removes
       // the unwanted keypress events. Enter is however both printable and
       // non-printable. One would expect Tab to be as well (but it isn't).
@@ -70,78 +73,84 @@ function extractEvents(
         return;
       }
     /* falls through */
-    case DOMTopLevelEventTypes.TOP_KEY_DOWN:
-    case DOMTopLevelEventTypes.TOP_KEY_UP:
+    case 'keydown':
+    case 'keyup':
       EventInterface = KeyboardEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_FOCUS_IN:
-    case DOMTopLevelEventTypes.TOP_FOCUS_OUT:
-    case DOMTopLevelEventTypes.TOP_BEFORE_BLUR:
-    case DOMTopLevelEventTypes.TOP_AFTER_BLUR:
+    case 'focusin':
+      reactEventType = 'focus';
       EventInterface = FocusEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_CLICK:
+    case 'focusout':
+      reactEventType = 'blur';
+      EventInterface = FocusEventInterface;
+      break;
+    case 'beforeblur':
+    case 'afterblur':
+      EventInterface = FocusEventInterface;
+      break;
+    case 'click':
       // Firefox creates a click event on right mouse clicks. This removes the
       // unwanted click events.
       if (nativeEvent.button === 2) {
         return;
       }
     /* falls through */
-    case DOMTopLevelEventTypes.TOP_AUX_CLICK:
-    case DOMTopLevelEventTypes.TOP_DOUBLE_CLICK:
-    case DOMTopLevelEventTypes.TOP_MOUSE_DOWN:
-    case DOMTopLevelEventTypes.TOP_MOUSE_MOVE:
-    case DOMTopLevelEventTypes.TOP_MOUSE_UP:
+    case 'auxclick':
+    case 'dblclick':
+    case 'mousedown':
+    case 'mousemove':
+    case 'mouseup':
     // TODO: Disabled elements should not respond to mouse events
     /* falls through */
-    case DOMTopLevelEventTypes.TOP_MOUSE_OUT:
-    case DOMTopLevelEventTypes.TOP_MOUSE_OVER:
-    case DOMTopLevelEventTypes.TOP_CONTEXT_MENU:
+    case 'mouseout':
+    case 'mouseover':
+    case 'contextmenu':
       EventInterface = MouseEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_DRAG:
-    case DOMTopLevelEventTypes.TOP_DRAG_END:
-    case DOMTopLevelEventTypes.TOP_DRAG_ENTER:
-    case DOMTopLevelEventTypes.TOP_DRAG_EXIT:
-    case DOMTopLevelEventTypes.TOP_DRAG_LEAVE:
-    case DOMTopLevelEventTypes.TOP_DRAG_OVER:
-    case DOMTopLevelEventTypes.TOP_DRAG_START:
-    case DOMTopLevelEventTypes.TOP_DROP:
+    case 'drag':
+    case 'dragend':
+    case 'dragenter':
+    case 'dragexit':
+    case 'dragleave':
+    case 'dragover':
+    case 'dragstart':
+    case 'drop':
       EventInterface = DragEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_TOUCH_CANCEL:
-    case DOMTopLevelEventTypes.TOP_TOUCH_END:
-    case DOMTopLevelEventTypes.TOP_TOUCH_MOVE:
-    case DOMTopLevelEventTypes.TOP_TOUCH_START:
+    case 'touchcancel':
+    case 'touchend':
+    case 'touchmove':
+    case 'touchstart':
       EventInterface = TouchEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_ANIMATION_END:
-    case DOMTopLevelEventTypes.TOP_ANIMATION_ITERATION:
-    case DOMTopLevelEventTypes.TOP_ANIMATION_START:
+    case ANIMATION_END:
+    case ANIMATION_ITERATION:
+    case ANIMATION_START:
       EventInterface = AnimationEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_TRANSITION_END:
+    case TRANSITION_END:
       EventInterface = TransitionEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_SCROLL:
+    case 'scroll':
       EventInterface = UIEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_WHEEL:
+    case 'wheel':
       EventInterface = WheelEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_COPY:
-    case DOMTopLevelEventTypes.TOP_CUT:
-    case DOMTopLevelEventTypes.TOP_PASTE:
+    case 'copy':
+    case 'cut':
+    case 'paste':
       EventInterface = ClipboardEventInterface;
       break;
-    case DOMTopLevelEventTypes.TOP_GOT_POINTER_CAPTURE:
-    case DOMTopLevelEventTypes.TOP_LOST_POINTER_CAPTURE:
-    case DOMTopLevelEventTypes.TOP_POINTER_CANCEL:
-    case DOMTopLevelEventTypes.TOP_POINTER_DOWN:
-    case DOMTopLevelEventTypes.TOP_POINTER_MOVE:
-    case DOMTopLevelEventTypes.TOP_POINTER_OUT:
-    case DOMTopLevelEventTypes.TOP_POINTER_OVER:
-    case DOMTopLevelEventTypes.TOP_POINTER_UP:
+    case 'gotpointercapture':
+    case 'lostpointercapture':
+    case 'pointercancel':
+    case 'pointerdown':
+    case 'pointermove':
+    case 'pointerout':
+    case 'pointerover':
+    case 'pointerup':
       EventInterface = PointerEventInterface;
       break;
     default:
@@ -150,6 +159,7 @@ function extractEvents(
   }
   const event = new SyntheticEvent(
     reactName,
+    reactEventType,
     null,
     nativeEvent,
     nativeEventTarget,
@@ -172,15 +182,13 @@ function extractEvents(
     // In the past, React has always bubbled them, but this can be surprising.
     // We're going to try aligning closer to the browser behavior by not bubbling
     // them in React either. We'll start by not bubbling onScroll, and then expand.
-    let accumulateTargetOnly = false;
-    if (disableOnScrollBubbling) {
-      accumulateTargetOnly =
-        !inCapturePhase &&
-        // TODO: ideally, we'd eventually add all events from
-        // nonDelegatedEvents list in DOMPluginEventSystem.
-        // Then we can remove this special list.
-        topLevelType === DOMTopLevelEventTypes.TOP_SCROLL;
-    }
+    const accumulateTargetOnly =
+      !inCapturePhase &&
+      // TODO: ideally, we'd eventually add all events from
+      // nonDelegatedEvents list in DOMPluginEventSystem.
+      // Then we can remove this special list.
+      // This is a breaking change that can wait until React 18.
+      domEventName === 'scroll';
 
     accumulateSinglePhaseListeners(
       targetInst,
@@ -190,7 +198,6 @@ function extractEvents(
       accumulateTargetOnly,
     );
   }
-  return event;
 }
 
 export {registerSimpleEvents as registerEvents, extractEvents};

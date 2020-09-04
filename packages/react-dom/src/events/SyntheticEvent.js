@@ -3,18 +3,23 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
+ *
+ * @flow
  */
 
 /* eslint valid-typeof: 0 */
 
 import getEventCharCode from './getEventCharCode';
 
+type EventInterfaceType = {
+  [propName: string]: 0 | ((event: {[propName: string]: mixed}) => mixed),
+};
+
 /**
  * @interface Event
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-const EventInterface = {
-  type: 0,
+const EventInterface: EventInterfaceType = {
   eventPhase: 0,
   bubbles: 0,
   cancelable: 0,
@@ -47,14 +52,16 @@ function functionThatReturnsFalse() {
  * DOM interface; custom application-specific events can also subclass this.
  */
 export function SyntheticEvent(
-  reactName,
-  targetInst,
-  nativeEvent,
-  nativeEventTarget,
-  Interface = EventInterface,
+  reactName: string | null,
+  reactEventType: string,
+  targetInst: Fiber,
+  nativeEvent: {[propName: string]: mixed},
+  nativeEventTarget: null | EventTarget,
+  Interface: EventInterfaceType = EventInterface,
 ) {
   this._reactName = reactName;
   this._targetInst = targetInst;
+  this.type = reactEventType;
   this.nativeEvent = nativeEvent;
   this.target = nativeEventTarget;
   this.currentTarget = null;
@@ -94,6 +101,7 @@ Object.assign(SyntheticEvent.prototype, {
 
     if (event.preventDefault) {
       event.preventDefault();
+      // $FlowFixMe - flow is not aware of `unknown` in IE
     } else if (typeof event.returnValue !== 'unknown') {
       event.returnValue = false;
     }
@@ -108,6 +116,7 @@ Object.assign(SyntheticEvent.prototype, {
 
     if (event.stopPropagation) {
       event.stopPropagation();
+      // $FlowFixMe - flow is not aware of `unknown` in IE
     } else if (typeof event.cancelBubble !== 'unknown') {
       // The ChangeEventPlugin registers a "propertychange" event for
       // IE. This event does not support bubbling or cancelling, and
@@ -137,23 +146,34 @@ Object.assign(SyntheticEvent.prototype, {
   isPersistent: functionThatReturnsTrue,
 });
 
-export const UIEventInterface = {
+export const UIEventInterface: EventInterfaceType = {
   ...EventInterface,
   view: 0,
   detail: 0,
 };
 
-let previousScreenX = 0;
-let previousScreenY = 0;
-// Use flags to signal movementX/Y has already been set
-let isMovementXSet = false;
-let isMovementYSet = false;
+let lastMovementX;
+let lastMovementY;
+let lastMouseEvent;
+
+function updateMouseMovementPolyfillState(event) {
+  if (event !== lastMouseEvent) {
+    if (lastMouseEvent && event.type === 'mousemove') {
+      lastMovementX = event.screenX - lastMouseEvent.screenX;
+      lastMovementY = event.screenY - lastMouseEvent.screenY;
+    } else {
+      lastMovementX = 0;
+      lastMovementY = 0;
+    }
+    lastMouseEvent = event;
+  }
+}
 
 /**
  * @interface MouseEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-export const MouseEventInterface = {
+export const MouseEventInterface: EventInterfaceType = {
   ...UIEventInterface,
   screenX: 0,
   screenY: 0,
@@ -169,42 +189,28 @@ export const MouseEventInterface = {
   button: 0,
   buttons: 0,
   relatedTarget: function(event) {
-    return (
-      event.relatedTarget ||
-      (event.fromElement === event.srcElement
+    if (event.relatedTarget === undefined)
+      return event.fromElement === event.srcElement
         ? event.toElement
-        : event.fromElement)
-    );
+        : event.fromElement;
+
+    return event.relatedTarget;
   },
   movementX: function(event) {
     if ('movementX' in event) {
       return event.movementX;
     }
-
-    const screenX = previousScreenX;
-    previousScreenX = event.screenX;
-
-    if (!isMovementXSet) {
-      isMovementXSet = true;
-      return 0;
-    }
-
-    return event.type === 'mousemove' ? event.screenX - screenX : 0;
+    updateMouseMovementPolyfillState(event);
+    return lastMovementX;
   },
   movementY: function(event) {
     if ('movementY' in event) {
       return event.movementY;
     }
-
-    const screenY = previousScreenY;
-    previousScreenY = event.screenY;
-
-    if (!isMovementYSet) {
-      isMovementYSet = true;
-      return 0;
-    }
-
-    return event.type === 'mousemove' ? event.screenY - screenY : 0;
+    // Don't need to call updateMouseMovementPolyfillState() here
+    // because it's guaranteed to have already run when movementX
+    // was copied.
+    return lastMovementY;
   },
 };
 
@@ -212,7 +218,7 @@ export const MouseEventInterface = {
  * @interface DragEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-export const DragEventInterface = {
+export const DragEventInterface: EventInterfaceType = {
   ...MouseEventInterface,
   dataTransfer: 0,
 };
@@ -221,7 +227,7 @@ export const DragEventInterface = {
  * @interface FocusEvent
  * @see http://www.w3.org/TR/DOM-Level-3-Events/
  */
-export const FocusEventInterface = {
+export const FocusEventInterface: EventInterfaceType = {
   ...UIEventInterface,
   relatedTarget: 0,
 };
@@ -231,7 +237,7 @@ export const FocusEventInterface = {
  * @see http://www.w3.org/TR/css3-animations/#AnimationEvent-interface
  * @see https://developer.mozilla.org/en-US/docs/Web/API/AnimationEvent
  */
-export const AnimationEventInterface = {
+export const AnimationEventInterface: EventInterfaceType = {
   ...EventInterface,
   animationName: 0,
   elapsedTime: 0,
@@ -242,7 +248,7 @@ export const AnimationEventInterface = {
  * @interface Event
  * @see http://www.w3.org/TR/clipboard-apis/
  */
-export const ClipboardEventInterface = {
+export const ClipboardEventInterface: EventInterfaceType = {
   ...EventInterface,
   clipboardData: function(event) {
     return 'clipboardData' in event
@@ -255,7 +261,7 @@ export const ClipboardEventInterface = {
  * @interface Event
  * @see http://www.w3.org/TR/DOM-Level-3-Events/#events-compositionevents
  */
-export const CompositionEventInterface = {
+export const CompositionEventInterface: EventInterfaceType = {
   ...EventInterface,
   data: 0,
 };
@@ -266,7 +272,7 @@ export const CompositionEventInterface = {
  *      /#events-inputevents
  */
 // Happens to share the same list for now.
-export const InputEventInterface = CompositionEventInterface;
+export const InputEventInterface: EventInterfaceType = CompositionEventInterface;
 
 /**
  * Normalization of deprecated HTML5 `key` values
